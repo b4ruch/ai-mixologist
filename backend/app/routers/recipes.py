@@ -1,9 +1,16 @@
-import base64
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
-from sqlalchemy.orm import Session
-from app.models.database import Recipe, get_db
+from typing import Optional, Union
+
+# Import our new GCP services
+from app.services.gcp_service import (
+    upload_image_to_gcs,
+    save_recipe_to_firestore,
+    get_recipes_by_user,
+    delete_recipe_from_firestore,
+    update_recipe_image_in_firestore
+)
+
 from app.services.ai_agent import generate_recipe_from_text, generate_recipe_from_image, generate_drink_image
 
 router = APIRouter()
@@ -44,9 +51,12 @@ async def upload_and_generate(file: UploadFile = File(...), prompt: Optional[str
             
         recipe_data = generate_recipe_from_image(image_bytes, file.content_type, prompt)
         
-        # Convert image bytes to base64 so they can be saved in DB
-        base64_str = base64.b64encode(image_bytes).decode('utf-8')
-        image_url = f"data:{file.content_type};base64,{base64_str}"
+        # Upload image to Google Cloud Storage instead of Base64
+        try:
+            image_url = upload_image_to_gcs(image_bytes, file.content_type)
+        except Exception as bucket_err:
+            print(f"Bucket upload failed: {bucket_err}, falling back to null image.")
+            image_url = None
 
         return {
             "title": recipe_data.get("title", "Custom Drink"),
@@ -78,18 +88,13 @@ def create_recipe_image(request: ImageGenerateRequest):
         if not image_bytes:
             raise HTTPException(status_code=500, detail="Image generation failed.")
             
-        # The Vertex GenAI returning image_bytes for Imagen is already base64 encoded as bytes!
-        # So we just decode the bytes to utf-8 string, no double-encoding needed!
-        # We also need to specify it natively returns a PNG format. 
+        # Upload AI image to Google Cloud Storage
         try:
-            base64_str = image_bytes.decode('utf-8')
-        except:
-            base64_str = base64.b64encode(image_bytes).decode('utf-8')
+            image_url = upload_image_to_gcs(image_bytes, "image/png")
+        except Exception as bucket_err:
+            print(f"Bucket upload failed: {bucket_err}")
+            raise HTTPException(status_code=500, detail="Failed to save image to cloud storage.")
             
-        image_url = f"data:image/png;base64,{base64_str}"
-        
-        # Here: Logic to save to bucket/DB for Registered users goes here!
-        # Temporal for guests just returns the base64!
         return {"image_url": image_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -103,54 +108,45 @@ class RecipeSaveRequest(BaseModel):
     image_url: Optional[str] = None
 
 @router.post("/recipes/save")
-def save_recipe(request: RecipeSaveRequest, db: Session = Depends(get_db)):
-    db_recipe = Recipe(
-        user_id=request.user_id,
-        title=request.title,
-        prompt=request.prompt,
-        content=request.content,
-        image_url=request.image_url
-    )
-    db.add(db_recipe)
-    db.commit()
-    db.refresh(db_recipe)
-    return {"status": "success", "id": db_recipe.id}
+def save_recipe(request: RecipeSaveRequest):
+    try:
+        # Save to Google Cloud Firestore instead of SQL
+        doc_id = save_recipe_to_firestore(
+            user_id=request.user_id,
+            title=request.title,
+            prompt=request.prompt,
+            content=request.content,
+            image_url=request.image_url
+        )
+        return {"status": "success", "id": str(doc_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/recipes/history/{user_id}")
-def get_history(user_id: int, db: Session = Depends(get_db)):
-    recipes = db.query(Recipe).filter(Recipe.user_id == user_id).order_by(Recipe.id.desc()).all()
-    # We return the exact mocked structure but parsed dynamically
-    history = []
-    for r in recipes:
-        history.append({
-            "id": r.id,
-            "title": r.title,
-            "prompt": r.prompt,
-            "content": r.content,
-            "isImage": False,
-            "imageUrl": r.image_url
-        })
-    return {"history": history}
+def get_history(user_id: int):
+    try:
+        # Fetch from Google Cloud Firestore
+        history = get_recipes_by_user(user_id)
+        return {"history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/recipes/{recipe_id}")
-def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    db.delete(recipe)
-    db.commit()
-    return {"status": "deleted"}
+def delete_recipe(recipe_id: str):
+    try:
+        delete_recipe_from_firestore(recipe_id)
+        return {"status": "deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class RecipeImageUpdateRequest(BaseModel):
     image_url: str
 
 @router.put("/recipes/{recipe_id}/image")
-def update_recipe_image(recipe_id: int, request: RecipeImageUpdateRequest, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    
-    recipe.image_url = request.image_url
-    db.commit()
-    return {"status": "success"}
+def update_recipe_image(recipe_id: str, request: RecipeImageUpdateRequest):
+    try:
+        update_recipe_image_in_firestore(recipe_id, request.image_url)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

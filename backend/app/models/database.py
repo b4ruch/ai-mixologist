@@ -18,18 +18,10 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
 
-
-class Recipe(Base):
-    __tablename__ = "recipes"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)
-    title = Column(String)
-    prompt = Column(String)
-    content = Column(String)
-    image_url = Column(String, nullable=True)
+# Recipe model removed! Recipes now stored in Google Cloud Firestore (NoSQL)
+# Images now stored in Google Cloud Storage Bucket
 
 Base.metadata.create_all(bind=engine)
-
 
 def get_db():
     db = SessionLocal()
