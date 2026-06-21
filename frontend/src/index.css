@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-mixologist-dark text-mixologist-text font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .glassmorphism {
+    @apply bg-white/10 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+  
+  .glassmorphism-dark {
+    @apply bg-black/30 backdrop-blur-lg border border-white/10 shadow-2xl;
+  }
+  
+  .gold-gradient-text {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-mixologist-gold-light via-mixologist-gold to-mixologist-gold-dark;
+  }
+}
+
+/* Custom Scrollbar for the dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f6a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #facc15;
+}
