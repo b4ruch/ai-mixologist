@@ -6,7 +6,10 @@ Welcome to **AI Mixologist** – a modern, cloud-native web application that use
 
 - **Frontend:** React + Vite, styled with Tailwind CSS.
 - **Backend:** FastAPI (Python), handling API requests and Vertex AI integrations.
-- **Database:** Google Cloud SQL (PostgreSQL) for persistent storage of recipes.
+- **Databases & Storage:** 
+  - **Google Cloud SQL (PostgreSQL):** Relational database managing user authentication and core logic.
+  - **Google Cloud Firestore (NoSQL):** Document DB for rapid storage and retrieval of generated recipes.
+  - **Google Cloud Storage (Bucket):** Object storage for generated and uploaded cocktail images.
 - **AI Integrations:** Google Cloud Vertex AI (Gemini and Imagen models).
 - **Deployment:** Google Cloud Run (Serverless containers) for both Frontend and Backend.
 - **Authentication:** Firebase Auth integrating seamlessly with the FastAPI backend.
@@ -16,7 +19,7 @@ Welcome to **AI Mixologist** – a modern, cloud-native web application that use
 - `/frontend` - Contains the React/Vite web application.
 - `/backend` - Contains the FastAPI Python application and AI logic.
 - `gcp-setup.sh` - Script to configure GCP APIs and Service Accounts.
-- `gcp-provision.sh` - Script to provision the Cloud SQL database.
+- `gcp-provision.sh` - Script to provision the Cloud SQL database, Firestore, and Storage buckets.
 - `gcp-deploy.sh` - Orchestrates the Docker builds and pushes to Google Artifact Registry / Cloud Run.
 
 ## 🚀 Deployment
@@ -31,4 +34,4 @@ The project includes deployment scripts to easily launch into Google Cloud.
    Run `./gcp-deploy.sh`
 
 ---
-*Built as part of DATS 5750.*
+*Project 2 for DATS 5750*
