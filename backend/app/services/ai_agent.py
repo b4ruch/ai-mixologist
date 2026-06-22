@@ -43,13 +43,13 @@ If a user asks for an ingredient not in your classic ratios, aggressively use Go
     try:
         text = response.text.replace('```json', '').replace('```', '').strip()
         # Clean Vertex Grounding citation references like [1], [2] from the raw JSON text
-        text = re.sub(r'\[\d+\]', '', text)
+        text = re.sub(r'\[[\d,\s]+\]', '', text)
         data = json.loads(text, strict=False)
         if "recipe" in data and isinstance(data["recipe"], str):
-            data["recipe"] = re.sub(r'\[\d+\]', '', data["recipe"])
+            data["recipe"] = re.sub(r'\[[\d,\s]+\]', '', data["recipe"])
         return data
     except Exception as e:
-        cleaned_fallback = re.sub(r'\[\d+\]', '', response.text) if response and hasattr(response, 'text') else str(e)
+        cleaned_fallback = re.sub(r'\[[\d,\s]+\]', '', response.text) if response and hasattr(response, 'text') else str(e)
         return {"recipe": cleaned_fallback, "is_valid": True}
 
 def generate_recipe_from_image(image_bytes: bytes, mime_type: str, prompt: str = "") -> dict:
@@ -73,13 +73,13 @@ def generate_recipe_from_image(image_bytes: bytes, mime_type: str, prompt: str =
     try:
         text = response.text.replace('```json', '').replace('```', '').strip()
         # Clean Vertex Grounding citation references like [1], [2] from the raw JSON text
-        text = re.sub(r'\[\d+\]', '', text)
+        text = re.sub(r'\[[\d,\s]+\]', '', text)
         data = json.loads(text, strict=False)
         if "recipe" in data and isinstance(data["recipe"], str):
-            data["recipe"] = re.sub(r'\[\d+\]', '', data["recipe"])
+            data["recipe"] = re.sub(r'\[[\d,\s]+\]', '', data["recipe"])
         return data
     except Exception as e:
-        cleaned_fallback = re.sub(r'\[\d+\]', '', response.text) if response and hasattr(response, 'text') else str(e)
+        cleaned_fallback = re.sub(r'\[[\d,\s]+\]', '', response.text) if response and hasattr(response, 'text') else str(e)
         return {"recipe": cleaned_fallback, "is_valid": True}
 
 def generate_drink_image(prompt: str) -> bytes:

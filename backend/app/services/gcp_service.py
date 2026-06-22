@@ -1,5 +1,6 @@
 import os
 import uuid
+import base64
 from google.cloud import firestore, storage
 
 # Initialize GCP clients
@@ -14,6 +15,15 @@ bucket = storage_client.bucket(BUCKET_NAME)
 
 def upload_image_to_gcs(image_bytes: bytes, content_type: str) -> str:
     """Uploads image bytes to Google Cloud Storage and returns the public URL."""
+    # Validate if it's base64 encoded bytes (Imagen SDK sometimes returns base64 strings encoded as bytes)
+    try:
+        decoded_string = image_bytes.decode('utf-8')
+        # If it successfully decodes to a string, it's base64. Let's decode to raw binary.
+        image_bytes = base64.b64decode(decoded_string)
+    except Exception:
+        # It's already raw binary
+        pass
+
     # Generate unique filename
     extension = "png"
     if "jpeg" in content_type or "jpg" in content_type:
@@ -35,7 +45,7 @@ def save_recipe_to_firestore(user_id: int, title: str, prompt: str, content: str
     recipes_ref = db.collection("recipes")
     
     data = {
-        "user_id": user_id,
+        "user_id": user_id,  # Keep as integer
         "title": title,
         "prompt": prompt,
         "content": content,
@@ -52,7 +62,9 @@ def save_recipe_to_firestore(user_id: int, title: str, prompt: str, content: str
 def get_recipes_by_user(user_id: int) -> list:
     """Gets all recipes for a given user ordered by creation date."""
     recipes_ref = db.collection("recipes")
-    query = recipes_ref.where("user_id", "==", user_id).order_by("created_at", direction=firestore.Query.DESCENDING)
+    # Removed order_by("created_at") to avoid needing a Composite Index in Firestore.
+    # We will fetch and then sort them dynamically in Python memory.
+    query = recipes_ref.where("user_id", "==", user_id)
     
     docs = query.stream()
     
@@ -65,8 +77,14 @@ def get_recipes_by_user(user_id: int) -> list:
             "prompt": d_dict.get("prompt", ""),
             "content": d_dict.get("content", ""),
             "isImage": False,
-            "imageUrl": d_dict.get("image_url", None)
+            "imageUrl": d_dict.get("image_url", None),
+            # Fetch created_at for sorting, default to a null-safe sorting timestamp if missing
+            "created_at": d_dict.get("created_at") 
         })
+    
+    # Sort in memory descending (newest first). Filter out ones missing timestamps for safety.
+    history.sort(key=lambda x: x["created_at"].timestamp() if x["created_at"] else 0, reverse=True)
+    
     return history
 
 def delete_recipe_from_firestore(recipe_id: str):

@@ -2,7 +2,6 @@ from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Union
 
-# Import our new GCP services
 from app.services.gcp_service import (
     upload_image_to_gcs,
     save_recipe_to_firestore,
@@ -16,21 +15,18 @@ from app.services.ai_agent import generate_recipe_from_text, generate_recipe_fro
 router = APIRouter()
 
 class RecipeRequest(BaseModel):
-    prompt: str
+    prompt: Optional[str] = ""
 
 @router.post("/recipes/generate")
 def create_recipe(request: RecipeRequest):
-    """
-    Endpoint for text-only recipe generation.
-    """
     try:
         if not request.prompt or len(request.prompt.strip()) == 0:
             raise HTTPException(status_code=400, detail="Prompt cannot be empty")
             
         recipe_data = generate_recipe_from_text(request.prompt)
         return {
-            "title": recipe_data.get("title", ""),
-            "recipe": recipe_data.get("recipe", ""),
+            "title": str(recipe_data.get("title") or "Custom Drink"),
+            "recipe": str(recipe_data.get("recipe") or recipe_data.get("content") or recipe_data.get("instructions") or ""),
             "is_valid": recipe_data.get("is_valid", True)
         }
     except Exception as e:
@@ -38,29 +34,25 @@ def create_recipe(request: RecipeRequest):
 
 @router.post("/recipes/upload")
 async def upload_and_generate(file: UploadFile = File(...), prompt: Optional[str] = Form("")):
-    """
-    Endpoint for Multi-Modal (Image + Optional Text) recipe generation.
-    """
     try:
-        # Read the file bytes
         image_bytes = await file.read()
         
-        # Verify it's an image
         if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
             
         recipe_data = generate_recipe_from_image(image_bytes, file.content_type, prompt)
         
-        # Upload image to Google Cloud Storage instead of Base64
         try:
             image_url = upload_image_to_gcs(image_bytes, file.content_type)
         except Exception as bucket_err:
             print(f"Bucket upload failed: {bucket_err}, falling back to null image.")
             image_url = None
 
+        raw_recipe = recipe_data.get("recipe") or recipe_data.get("content") or recipe_data.get("instructions") or ""
+
         return {
-            "title": recipe_data.get("title", "Custom Drink"),
-            "recipe": recipe_data.get("recipe", ""),
+            "title": str(recipe_data.get("title") or "Custom Drink"),
+            "recipe": str(raw_recipe),
             "is_valid": recipe_data.get("is_valid", True),
             "filename": file.filename,
             "image_url": image_url
@@ -69,26 +61,22 @@ async def upload_and_generate(file: UploadFile = File(...), prompt: Optional[str
         raise HTTPException(status_code=500, detail=str(e))
 
 class ImageGenerateRequest(BaseModel):
-    prompt: str
-    recipe: str
+    prompt: Optional[str] = ""
+    recipe: Optional[str] = ""
 
 @router.post("/recipes/generate-image")
 def create_recipe_image(request: ImageGenerateRequest):
-    """
-    Endpoint for generating an image from a finished recipe.
-    """
     try:
         if not request.prompt and not request.recipe:
             raise HTTPException(status_code=400, detail="Missing context for image generation")
             
-        clean_recipe = request.recipe.replace("\n", " ").strip()
+        clean_recipe = request.recipe.replace("\n", " ").strip() if request.recipe else ""
         combined_prompt = f"Make sure you include the exact visual ingredients. Drink context: {request.prompt}. Theme and Ingredients: {clean_recipe[:350]}"
         image_bytes = generate_drink_image(combined_prompt)
         
         if not image_bytes:
             raise HTTPException(status_code=500, detail="Image generation failed.")
             
-        # Upload AI image to Google Cloud Storage
         try:
             image_url = upload_image_to_gcs(image_bytes, "image/png")
         except Exception as bucket_err:
@@ -102,20 +90,19 @@ def create_recipe_image(request: ImageGenerateRequest):
 
 class RecipeSaveRequest(BaseModel):
     user_id: int
-    title: str
+    title: Optional[str] = "Custom AI Drink"
     prompt: Optional[str] = ""
-    content: str
+    content: Optional[str] = ""
     image_url: Optional[str] = None
 
 @router.post("/recipes/save")
 def save_recipe(request: RecipeSaveRequest):
     try:
-        # Save to Google Cloud Firestore instead of SQL
         doc_id = save_recipe_to_firestore(
             user_id=request.user_id,
-            title=request.title,
-            prompt=request.prompt,
-            content=request.content,
+            title=request.title or "Custom AI Drink",
+            prompt=request.prompt or "",
+            content=request.content or "",
             image_url=request.image_url
         )
         return {"status": "success", "id": str(doc_id)}
@@ -125,7 +112,6 @@ def save_recipe(request: RecipeSaveRequest):
 @router.get("/recipes/history/{user_id}")
 def get_history(user_id: int):
     try:
-        # Fetch from Google Cloud Firestore
         history = get_recipes_by_user(user_id)
         return {"history": history}
     except Exception as e:
@@ -139,7 +125,6 @@ def delete_recipe(recipe_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 class RecipeImageUpdateRequest(BaseModel):
     image_url: str
 
@@ -150,3 +135,4 @@ def update_recipe_image(recipe_id: str, request: RecipeImageUpdateRequest):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
